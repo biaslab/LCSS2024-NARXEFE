@@ -19,10 +19,10 @@ fs = 20 # Hertz
 T = 10
 
 # Basis
-H = 3
+H = 2
 sys_basis(x) = cat([1.0; [x.^d for d in 1:H]]...,dims=1)
-M_in = 3
-M_out = 3
+M_in = 2
+M_out = 2
 M = size(sys_basis(zeros(M_out + 1 + M_in)),1)
 
 # Control parameters
@@ -44,7 +44,8 @@ for nn in 1:num_exps
     sys_coefficients = sys_settings["sys_theta"]
 
     # Random controls
-    controls = clamp!(2randn(N).-1, input_lims...)
+    controls = rand(Uniform(input_lims...), N)
+    # controls = clamp!(randn(N), input_lims...)
 
     # Start system
     system = NARXsys(sys_coefficients, 

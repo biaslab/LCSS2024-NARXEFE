@@ -19,7 +19,7 @@ fs = 20 # Hertz
 T = 5
 
 # Basis
-H = 3
+H = 2
 sys_basis(x) = cat([1.0; [x.^d for d in 1:H]]...,dims=1)
 M_in = 2
 M_out = 2
@@ -34,7 +34,7 @@ tlimit = 10.
 β0 = 1.0
 μ0 = zeros(M)
 Λ0 = diagm(ones(M))
-goals = [Normal(1.0, 1.0) for t in 1:T]
+goals = [Normal(0.5, 1.0) for t in 1:T]
 
 ppp = Progress(num_exps)
 for nn in 1:num_exps

@@ -11,15 +11,15 @@ fs = 20 # Hertz
 Δt = 1/fs
 
 # Basis
-H = 3
+H = 2
 sys_basis(x) = cat([1.0; [x.^d for d in 1:H]]...,dims=1)
-M_in = 3
-M_out = 3
+M_in = 2
+M_out = 2
 M = size(sys_basis(zeros(M_out + 1 + M_in)),1)
 
 # Randomized variables
-pσ = Gamma(2.0, 1/100.)
-pf = Uniform(1.0, 1.5)
+pσ = Gamma(3.0, 1/300.)
+pf = Uniform(0.5, 2.0)
 
 ppp = Progress(num_exps)
 for nn in 1:num_exps

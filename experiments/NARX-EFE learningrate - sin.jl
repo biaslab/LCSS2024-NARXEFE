@@ -20,10 +20,10 @@ tsteps = collect(range(0.0, step=Δt, length=N))
 T = 10
 
 # Basis
-H = 3
+H = 2
 sys_basis(x) = cat([1.0; [x.^d for d in 1:H]]...,dims=1)
-M_in = 3
-M_out = 3
+M_in = 2
+M_out = 2
 M = size(sys_basis(zeros(M_out + 1 + M_in)),1)
 
 # Control parameters

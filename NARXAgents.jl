@@ -145,9 +145,9 @@ function predictions(agent::NARXAgent, controls; time_horizon=1)
     return m_y, v_y
 end
 
-function mutualinfo(agent::NARXAgent, ϕ)
+function mutualinfo(agent::NARXAgent, ϕ_t)
     "Mutual information between parameters and posterior predictive (constant terms dropped)"
-    return -1/2*log( agent.β/agent.α*(1 + ϕ'*inv(agent.Λ)*ϕ) )
+    return -1/2*log( agent.β/agent.α*(1 + ϕ_t'*inv(agent.Λ)*ϕ_t) )
 end
 
 function crossentropy(agent::NARXAgent, goal::Distribution{Univariate, Continuous}, m_pred, v_pred)
