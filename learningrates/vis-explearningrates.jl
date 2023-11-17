@@ -51,14 +51,14 @@ plot(xlabel="time (#steps)",
     legendfontsize=12, 
     ylabel="log-probability", 
     size=(600,300), 
-    ylims=(mint, maxt),
-    yticks=[round(mint), round(mean([mint,maxt])), round(maxt)],
-    # yscale=:log10,
+    # ylims=(mint, maxt),
+    # yticks=[round(mint), round(mean([mint,maxt])), round(maxt)],
+    xscale=:log10,
     legend=:bottomright)
 
 # plot!(rate_rnd, linewidth=5, label="rnd")
-plot!(rate_sin[index], linewidth=4, label="sine")
-plot!(rate_MSE[index], linewidth=4, label="MSE")
-plot!(rate_EFE[index], linewidth=4, label="EFE")
+plot!(rate_sin[2:100] .- rate_sin[1:99], linewidth=4, label="sine")
+plot!(rate_MSE[2:100] .- rate_MSE[1:99], linewidth=4, label="MSE")
+plot!(rate_EFE[2:100] .- rate_EFE[1:99], linewidth=4, label="EFE")
 
 savefig("./experiments/figures/compare-learningrates.png")

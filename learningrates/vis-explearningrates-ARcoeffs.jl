@@ -5,7 +5,7 @@ using Statistics
 using Distributions
 using LaTeXStrings
 using Plots
-default(label="", linewidth=5, margin=12Plots.pt)
+default(label="", linewidth=5, margin=15Plots.pt)
 
 # includet("../mv_normal_gamma.jl"); using .mv_normal_gamma
 
@@ -60,7 +60,7 @@ plot(xlabel="time (#steps)",
     guidefontsize=12, 
     tickfontsize=12, 
     legendfontsize=12, 
-    ylabel=L"p(\theta^{*} | \mu_k, \Lambda_k, \alpha_k, \beta_k)", 
+    ylabel=L"p(\theta^{*} | \mathcal{D}_k)", 
     size=(600,200), 
     xscale=:log10,
     legend=:topleft)
@@ -71,6 +71,7 @@ plot!(mll_MSE[index], ribbon=sll_MSE[index], linewidth=4, label="MSE")
 plot!(mll_EFE[index], ribbon=sll_EFE[index], linewidth=4, label="EFE")
 
 savefig("./experiments/figures/probpost-idARcoeffs.png")
+savefig("./experiments/figures/probpost-idARcoeffs.pdf")
 
 mn2_rnd = mean(n2_rnd, dims=1)'
 mn2_sin = mean(n2_sin, dims=1)'

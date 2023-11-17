@@ -1,11 +1,13 @@
 module NARXAgents
 
 using Optim
+using ForwardDiff
 using Distributions
 using SpecialFunctions
 using LinearAlgebra
 
-export NARXAgent, update!, predictions, pol, crossentropy, mutualinfo, minimizeEFE, minimizeMSE, backshift, update_goals!
+export NARXAgent, update!, predictions, posterior_predictive, pol, crossentropy, mutualinfo, 
+    minimizeEFE, minimizeMSE, backshift, update_goals!, EFE, EFE_balance
 
 
 mutable struct NARXAgent
@@ -93,7 +95,7 @@ function update!(agent::NARXAgent, y::Float64, u::Float64)
 
     agent.ybuffer = backshift(agent.ybuffer, y)
 
-    agent.free_energy = -log(marginal_likelihood(agent, (μ0, Λ0, α0, β0)))
+    agent.free_energy = -log_marginal_likelihood(agent, (μ0, Λ0, α0, β0))
 end
 
 function params(agent::NARXAgent)
@@ -106,6 +108,14 @@ function marginal_likelihood(agent::NARXAgent, prior_params)
     μ0, Λ0, α0, β0 = prior_params
 
     return (det(Λn)^(-1/2)*gamma(αn)*βn^αn)/(det(Λ0)^(-1/2)*gamma(α0)*β0^α0) * (2π)^(-1/2)
+end
+
+function log_marginal_likelihood(agent::NARXAgent, prior_params)
+
+    μn, Λn, αn, βn = params(agent)
+    μ0, Λ0, α0, β0 = prior_params
+
+    return -1/2*logdet(Λn) + log(gamma(αn)) + αn*log(βn) -(-1/2*logdet(Λ0) +log(gamma(α0)) + α0*log(β0)) -1/2*log(2π)
 end
 
 function posterior_predictive(agent::NARXAgent, ϕ_t)
@@ -147,13 +157,32 @@ end
 
 function mutualinfo(agent::NARXAgent, ϕ_t)
     "Mutual information between parameters and posterior predictive (constant terms dropped)"
-    return -1/2*log( agent.β/agent.α*(1 + ϕ_t'*inv(agent.Λ)*ϕ_t) )
+    return 1/2*log(agent.β/agent.α*(1 + ϕ_t'*inv(agent.Λ)*ϕ_t))
+end
+
+function mutualinfo(agent::NARXAgent, ybuffer, ubuffer, control)
+    "Mutual information between parameters and posterior predictive (constant terms dropped)"
+
+    ubuffer = backshift(ubuffer, control)
+    ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree)
+
+    return 1/2*log(agent.β/agent.α*(1 + ϕ_t'*inv(agent.Λ)*ϕ_t))
 end
 
 function crossentropy(agent::NARXAgent, goal::Distribution{Univariate, Continuous}, m_pred, v_pred)
     "Cross-entropy between posterior predictive and goal prior (constant terms dropped)"  
     return ( v_pred + (m_pred - mean(goal))^2 ) / ( 2var(goal) )
     # return (m_pred - mean(goal))^2/(2var(goal))
+end 
+
+function crossentropy(agent::NARXAgent, ybuffer, ubuffer, goal::Distribution{Univariate, Continuous}, control)
+    "Cross-entropy between posterior predictive and goal prior (constant terms dropped)"  
+    
+    ubuffer = backshift(ubuffer, control)
+    ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree)
+    ν_t, m_t, s2_t = posterior_predictive(agent, ϕ_t)
+    
+    return ( s2_t * ν_t/(ν_t - 2) + (m_t - mean(goal))^2 ) / ( 2var(goal) )
 end 
 
 function EFE(agent::NARXAgent, goals, controls)
@@ -176,12 +205,26 @@ function EFE(agent::NARXAgent, goals, controls)
         v_y = s2_t * ν_t/(ν_t - 2)
         
         # Accumulate EFE
-        J += mutualinfo(agent, ϕ_t) + crossentropy(agent, goals[t], m_y, v_y) + agent.λ*controls[t]^2
+        J += crossentropy(agent, goals[t], m_y, v_y) - mutualinfo(agent, ϕ_t) + agent.λ*controls[t]^2
         
         # Update previous 
         ybuffer = backshift(ybuffer, m_y)        
     end
     return J
+end
+
+function EFE_balance(agent::NARXAgent, goal, control)
+    "Analyse terms in Expected Free Energy objective"
+
+    y_ = agent.ybuffer
+    u_ = agent.ubuffer
+    
+    # Track EFE terms
+    dJ1 = ForwardDiff.derivative(a -> mutualinfo(agent, y_, u_, a), control)
+    dJ2 = ForwardDiff.derivative(a -> crossentropy(agent, y_, u_, goal, a), control)
+    dJ3 = 2*agent.λ*control
+        
+    return dJ1,dJ2,dJ3
 end
 
 function MSE(agent::NARXAgent, goals, controls)
@@ -209,7 +252,7 @@ function MSE(agent::NARXAgent, goals, controls)
     return J
 end
 
-function minimizeEFE(agent::NARXAgent, goals; u_0=nothing, time_limit=10, verbose=false, control_lims::Tuple=(-Inf,Inf))
+function minimizeEFE(agent::NARXAgent, goals; u_0=nothing, time_limit=10.0, verbose=false, control_lims::Tuple=(-Inf,Inf))
     "Minimize EFE objective and return policy."
 
     if isnothing(u_0); u_0 = 1e-8*randn(agent.thorizon); end
