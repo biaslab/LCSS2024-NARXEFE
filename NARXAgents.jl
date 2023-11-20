@@ -6,8 +6,8 @@ using Distributions
 using SpecialFunctions
 using LinearAlgebra
 
-export NARXAgent, update!, predictions, posterior_predictive, pol, crossentropy, mutualinfo, 
-    minimizeEFE, minimizeMSE, backshift, update_goals!, EFE, EFE_balance
+export NARXAgent, update!, predictions, posterior_predictive, pol, crossentropy, mutualinfo,
+    minimizeEFE, minimizeMSE, backshift, update_goals!, EFE, EFE_balance, MSE
 
 
 mutable struct NARXAgent
@@ -22,13 +22,14 @@ mutable struct NARXAgent
     delay_inp       ::Integer
     delay_out       ::Integer
     pol_degree      ::Integer
+    zero_order      ::Bool
     order           ::Integer
 
     μ               ::Vector{Float64}   # Coefficients mean
     Λ               ::Matrix{Float64}   # Coefficients precision
     α               ::Float64           # Likelihood precision shape
     β               ::Float64           # Likelihood precision rate
-    λ               ::Float64           # Control prior precision
+    η               ::Float64           # Control prior precision
 
     goals           ::Union{Distribution{Univariate, Continuous}, Vector}
     thorizon        ::Integer
@@ -44,6 +45,7 @@ mutable struct NARXAgent
                        delay_inp::Integer=1, 
                        delay_out::Integer=1, 
                        pol_degree::Integer=1,
+                       zero_order::Bool=true,
                        time_horizon::Integer=1,
                        num_iters::Integer=10,
                        control_prior_precision::Float64=0.0)
@@ -51,7 +53,7 @@ mutable struct NARXAgent
         ybuffer = zeros(delay_out)
         ubuffer = zeros(delay_inp+1)
 
-        order = size(pol(zeros(1 + delay_inp + delay_out), degree=pol_degree),1)
+        order = size(pol(zeros(1 + delay_inp + delay_out), degree=pol_degree, zero_order=zero_order),1)
         if order != length(coefficients_mean) 
             error("Dimensionality of coefficients and model order do not match.")
         end
@@ -63,6 +65,7 @@ mutable struct NARXAgent
                    delay_inp,
                    delay_out,
                    pol_degree,
+                   zero_order,
                    order,
                    coefficients_mean,
                    coefficients_precision,
@@ -76,12 +79,18 @@ mutable struct NARXAgent
     end
 end
 
-pol(x; degree::Integer = 1) = cat([1.0; [x.^d for d in 1:degree]]...,dims=1)
+function pol(x; degree::Integer = 1, zero_order=true)
+    if zero_order
+        return cat([1.0; [x.^d for d in 1:degree]]...,dims=1)
+    else 
+        return cat([x.^d for d in 1:degree]...,dims=1)
+    end    
+end
 
 function update!(agent::NARXAgent, y::Float64, u::Float64)
 
     agent.ubuffer = backshift(agent.ubuffer, u)
-    ϕ = pol([agent.ybuffer; agent.ubuffer], degree=agent.pol_degree)
+    ϕ = pol([agent.ybuffer; agent.ubuffer], degree=agent.pol_degree, zero_order=agent.zero_order)
 
     μ0 = agent.μ
     Λ0 = agent.Λ
@@ -140,7 +149,7 @@ function predictions(agent::NARXAgent, controls; time_horizon=1)
         
         # Update control buffer
         ubuffer = backshift(ubuffer, controls[t])
-        ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree)
+        ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree, zero_order=agent.zero_order)
 
         ν_t, m_t, s2_t = posterior_predictive(agent, ϕ_t)
         
@@ -157,16 +166,16 @@ end
 
 function mutualinfo(agent::NARXAgent, ϕ_t)
     "Mutual information between parameters and posterior predictive (constant terms dropped)"
-    return 1/2*log(agent.β/agent.α*(1 + ϕ_t'*inv(agent.Λ)*ϕ_t))
+    return 1/2*log(1 + ϕ_t'*inv(agent.Λ)*ϕ_t)
 end
 
 function mutualinfo(agent::NARXAgent, ybuffer, ubuffer, control)
     "Mutual information between parameters and posterior predictive (constant terms dropped)"
 
     ubuffer = backshift(ubuffer, control)
-    ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree)
+    ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree, zero_order=agent.zero_order)
 
-    return 1/2*log(agent.β/agent.α*(1 + ϕ_t'*inv(agent.Λ)*ϕ_t))
+    return 1/2*log(1 + ϕ_t'*inv(agent.Λ)*ϕ_t)
 end
 
 function crossentropy(agent::NARXAgent, goal::Distribution{Univariate, Continuous}, m_pred, v_pred)
@@ -179,11 +188,16 @@ function crossentropy(agent::NARXAgent, ybuffer, ubuffer, goal::Distribution{Uni
     "Cross-entropy between posterior predictive and goal prior (constant terms dropped)"  
     
     ubuffer = backshift(ubuffer, control)
-    ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree)
+    ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree, zero_order=agent.zero_order)
     ν_t, m_t, s2_t = posterior_predictive(agent, ϕ_t)
     
     return ( s2_t * ν_t/(ν_t - 2) + (m_t - mean(goal))^2 ) / ( 2var(goal) )
 end 
+
+function EFE(agent::NARXAgent, ybuffer, ubuffer, goal::Distribution{Univariate, Continuous}, control)
+    "Compute Expected Free Energy for a single control"
+    return crossentropy(agent,ybuffer,ubuffer,goal,control) -mutualinfo(agent,ybuffer,ubuffer,control) +agent.η*control^2
+end
 
 function EFE(agent::NARXAgent, goals, controls)
     "Expected Free Energy"
@@ -196,7 +210,7 @@ function EFE(agent::NARXAgent, goals, controls)
         
         # Update control buffer
         ubuffer = backshift(ubuffer, controls[t])
-        ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree)
+        ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree, zero_order=agent.zero_order)
 
         # Prediction
         ν_t, m_t, s2_t = posterior_predictive(agent, ϕ_t)
@@ -205,7 +219,7 @@ function EFE(agent::NARXAgent, goals, controls)
         v_y = s2_t * ν_t/(ν_t - 2)
         
         # Accumulate EFE
-        J += crossentropy(agent, goals[t], m_y, v_y) - mutualinfo(agent, ϕ_t) + agent.λ*controls[t]^2
+        J += crossentropy(agent, goals[t], m_y, v_y) - mutualinfo(agent, ϕ_t) + agent.η*controls[t]^2
         
         # Update previous 
         ybuffer = backshift(ybuffer, m_y)        
@@ -222,10 +236,19 @@ function EFE_balance(agent::NARXAgent, goal, control)
     # Track EFE terms
     dJ1 = ForwardDiff.derivative(a -> mutualinfo(agent, y_, u_, a), control)
     dJ2 = ForwardDiff.derivative(a -> crossentropy(agent, y_, u_, goal, a), control)
-    dJ3 = 2*agent.λ*control
+    dJ3 = 2*agent.η*control
         
     return dJ1,dJ2,dJ3
 end
+
+function MSE(agent::NARXAgent, ybuffer, ubuffer, goal::Distribution{Univariate, Continuous}, control)
+    
+    ubuffer = backshift(ubuffer, control)
+    ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree, zero_order=agent.zero_order)
+    _, m_t, _ = posterior_predictive(agent, ϕ_t)
+    
+    return (m_t - mean(goal))^2
+end 
 
 function MSE(agent::NARXAgent, goals, controls)
     "Mean Squared Error between prediction and setpoint."
@@ -238,13 +261,13 @@ function MSE(agent::NARXAgent, goals, controls)
         
         # Update control buffer
         ubuffer = backshift(ubuffer, controls[t])
-        ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree)
+        ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree, zero_order=agent.zero_order)
         
         # Prediction
         m_y = dot(agent.μ, ϕ_t)
         
         # Accumulate objective function
-        J += (mean(goals[t]) - m_y)^2 + agent.λ*controls[t]^2
+        J += (mean(goals[t]) - m_y)^2 + agent.η*controls[t]^2
         
         # Update previous 
         ybuffer = backshift(ybuffer, m_y)        
@@ -259,7 +282,8 @@ function minimizeEFE(agent::NARXAgent, goals; u_0=nothing, time_limit=10.0, verb
     opts = Optim.Options(time_limit=time_limit, 
                          show_trace=verbose, 
                          allow_f_increases=true, 
-                         g_tol=1e-12, 
+                         f_tol=1e-15,
+                         g_tol=1e-15, 
                          show_every=10,
                          iterations=10_000)
 
@@ -279,7 +303,8 @@ function minimizeMSE(agent::NARXAgent, goals; u_0=nothing, time_limit=10, verbos
     opts = Optim.Options(time_limit=time_limit, 
                          show_trace=verbose, 
                          allow_f_increases=true, 
-                         g_tol=1e-12, 
+                         f_tol=1e-15,
+                         g_tol=1e-15, 
                          show_every=10,
                          iterations=10_000)
 
