@@ -1,17 +1,14 @@
 %% Swing-up Control of a Pendulum Using Nonlinear Model Predictive Control
 % Copyright 2016-2020 The MathWorks, Inc.
 
+close all;
+clear all;
+
 %% Product Requirement
 if ~mpcchecktoolboxinstalled('optim')
     disp('Optimization Toolbox is required to run this example.')
     return
 end
-
-# System parameters
-m = 2.0;
-l = 0.5;
-g = 9.81;
-c = 0.2;
 
 %% Create Nonlinear MPC Controller
 nx = 2;
@@ -20,7 +17,7 @@ nu = 1;
 nlobj = nlmpc(nx, ny, nu);
 
 %% Sample time
-Ts = 0.2;
+Ts = 0.1;
 nlobj.Ts = Ts;
 
 %% Horizons
@@ -38,11 +35,12 @@ nlobj.Jacobian.OutputFcn = @(x,u,Ts) [1 0];
 
 %% Weights
 nlobj.Weights.OutputVariables = [1];
-nlobj.Weights.ManipulatedVariablesRate = 0.1;
+nlobj.Weights.ManipulatedVariables = 1e-3;
+nlobj.Weights.ManipulatedVariablesRate = 0.2;
 
 %% Control limits
-nlobj.MV.Min = -40;
-nlobj.MV.Max = 40;
+nlobj.MV.Min = -10;
+nlobj.MV.Max = 10;
 
 %% Validate Nonlinear MPC Controller
 theta0 = 0.0;
@@ -88,7 +86,7 @@ for ct = 1:(20/Ts)
     x = pendulumDT0(x,mv,Ts);
 
     % Generate sensor data with some white noise.
-    y = x(1) + randn(1)*0.01; 
+    y = x(1) + randn(1)*1e-3;
 
     % Save plant states for display.
     y_NMPC = [y_NMPC y];
@@ -100,17 +98,17 @@ end
 close(hbar)
 
 %% Plot the closed-loop response.
-figure
-subplot(1,2,1)
-plot(0:Ts:Duration,x_NMPC(1,:))
-xlabel('time')
-ylabel('theta')
-title('pendulum angle')
-subplot(1,2,2)
-plot(0:Ts:Duration,x_NMPC(2,:))
-xlabel('time')
-ylabel('thetadot')
-title('pendulum velocity')
+% figure
+% subplot(1,2,1)
+% plot(0:Ts:Duration,x_NMPC(1,:))
+% xlabel('time')
+% ylabel('theta')
+% title('pendulum angle')
+% subplot(1,2,2)
+% plot(0:Ts:Duration,x_NMPC(2,:))
+% xlabel('time')
+% ylabel('thetadot')
+% title('pendulum velocity')
 
 figure
 subplot(1,2,1)
@@ -123,5 +121,5 @@ xlabel('time')
 ylabel('torque')
 
 %% Store results
-save('results/NMPC.mat', 'x_NMPC', 'y_NMPC', 'u_NMPC'); 
+save('../results/NMPC.mat', 'x_NMPC', 'y_NMPC', 'u_NMPC'); 
 

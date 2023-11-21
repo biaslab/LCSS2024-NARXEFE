@@ -13,16 +13,15 @@ function dxdt = pendulumCT0(x, u)
 %#codegen
 
 %% parameters
-mPend = 2.0;  % pendulum mass
+mPend = 1.0;  % pendulum mass
 g = 9.81;   % gravity of earth
 L = 0.5;    % pendulum length
-Kd = 0.2;    % damping
-%% Obtain x, u and y
+Kd = 0.01;    % damping
+
 % x
 theta = x(1);
 theta_dot = x(2);
-% u
-F = u;
+
 %% Compute dxdt
 dxdt = [theta_dot;...
-        -g/L*sin(theta) - Kd*L*theta_dot + 1/mPend*F];
+        -g/L*sin(theta) - Kd*L*theta_dot + 1/(mPend*L)*u];
