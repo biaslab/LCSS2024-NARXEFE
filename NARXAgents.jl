@@ -7,7 +7,7 @@ using SpecialFunctions
 using LinearAlgebra
 
 export NARXAgent, update!, predictions, posterior_predictive, pol, crossentropy, mutualinfo,
-    minimizeEFE, minimizeMSE, backshift, update_goals!, EFE, EFE_balance, MSE
+    minimizeEFE, minimizeQCR, backshift, update_goals!, EFE, EFE_balance, QCR
 
 
 mutable struct NARXAgent
@@ -196,7 +196,7 @@ end
 
 function EFE(agent::NARXAgent, ybuffer, ubuffer, goal::Distribution{Univariate, Continuous}, control)
     "Compute Expected Free Energy for a single control"
-    return crossentropy(agent,ybuffer,ubuffer,goal,control) -mutualinfo(agent,ybuffer,ubuffer,control) +agent.η*control^2
+    return crossentropy(agent,ybuffer,ubuffer,goal,control) -mutualinfo(agent,ybuffer,ubuffer,control) +agent.η/2*control^2
 end
 
 function EFE(agent::NARXAgent, goals, controls)
@@ -219,7 +219,7 @@ function EFE(agent::NARXAgent, goals, controls)
         v_y = s2_t * ν_t/(ν_t - 2)
         
         # Accumulate EFE
-        J += crossentropy(agent, goals[t], m_y, v_y) - mutualinfo(agent, ϕ_t) + agent.η*controls[t]^2
+        J += crossentropy(agent, goals[t], m_y, v_y) - mutualinfo(agent, ϕ_t) + agent.η/2*controls[t]^2
         
         # Update previous 
         ybuffer = backshift(ybuffer, m_y)        
@@ -241,7 +241,8 @@ function EFE_balance(agent::NARXAgent, goal, control)
     return dJ1,dJ2,dJ3
 end
 
-function MSE(agent::NARXAgent, ybuffer, ubuffer, goal::Distribution{Univariate, Continuous}, control)
+function QCR(agent::NARXAgent, ybuffer, ubuffer, goal::Distribution{Univariate, Continuous}, control)
+    "Quadratic cost with regularization between prediction and setpoint."
     
     ubuffer = backshift(ubuffer, control)
     ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree, zero_order=agent.zero_order)
@@ -250,8 +251,8 @@ function MSE(agent::NARXAgent, ybuffer, ubuffer, goal::Distribution{Univariate, 
     return (m_t - mean(goal))^2
 end 
 
-function MSE(agent::NARXAgent, goals, controls)
-    "Mean Squared Error between prediction and setpoint."
+function QCR(agent::NARXAgent, goals, controls)
+    "Quadratic cost with regularization between prediction and setpoint."
 
     ybuffer = agent.ybuffer
     ubuffer = agent.ubuffer
@@ -264,13 +265,13 @@ function MSE(agent::NARXAgent, goals, controls)
         ϕ_t = pol([ybuffer; ubuffer], degree=agent.pol_degree, zero_order=agent.zero_order)
         
         # Prediction
-        m_y = dot(agent.μ, ϕ_t)
+        m_t = dot(agent.μ, ϕ_t)
         
         # Accumulate objective function
-        J += (mean(goals[t]) - m_y)^2 + agent.η*controls[t]^2
+        J += (mean(goals[t]) - m_t)^2 ./2 + agent.η*controls[t]^2
         
         # Update previous 
-        ybuffer = backshift(ybuffer, m_y)        
+        ybuffer = backshift(ybuffer, m_t)        
     end
     return J
 end
@@ -278,14 +279,14 @@ end
 function minimizeEFE(agent::NARXAgent, goals; u_0=nothing, time_limit=10.0, verbose=false, control_lims::Tuple=(-Inf,Inf))
     "Minimize EFE objective and return policy."
 
-    if isnothing(u_0); u_0 = 1e-8*randn(agent.thorizon); end
+    if isnothing(u_0); u_0 = zeros(agent.thorizon); end
     opts = Optim.Options(time_limit=time_limit, 
                          show_trace=verbose, 
-                         allow_f_increases=true, 
-                         f_tol=1e-15,
-                         g_tol=1e-15, 
+                         allow_f_increases=false, 
+                         f_tol=1e-8,
+                         g_tol=1e-8, 
                          show_every=10,
-                         iterations=10_000)
+                         iterations=3_000)
 
     # Objective function
     J(u) = EFE(agent, goals, u)
@@ -296,20 +297,20 @@ function minimizeEFE(agent::NARXAgent, goals; u_0=nothing, time_limit=10.0, verb
     return Optim.minimizer(results)
 end
 
-function minimizeMSE(agent::NARXAgent, goals; u_0=nothing, time_limit=10, verbose=false, control_lims::Tuple=(-Inf,Inf))
-    "Minimize MSE objective and return policy."
+function minimizeQCR(agent::NARXAgent, goals; u_0=nothing, time_limit=10, verbose=false, control_lims::Tuple=(-Inf,Inf))
+    "Minimize QCR objective and return policy."
 
-    if isnothing(u_0); u_0 = 1e-8*randn(agent.thorizon); end
+    if isnothing(u_0); u_0 = zeros(agent.thorizon); end
     opts = Optim.Options(time_limit=time_limit, 
                          show_trace=verbose, 
-                         allow_f_increases=true, 
-                         f_tol=1e-15,
-                         g_tol=1e-15, 
+                         allow_f_increases=false, 
+                         f_tol=1e-8,
+                         g_tol=1e-8, 
                          show_every=10,
-                         iterations=10_000)
+                         iterations=3_000)
 
     # Objective function
-    J(u) = MSE(agent, goals, u)
+    J(u) = QCR(agent, goals, u)
 
     # Constrained minimization procedure
     results = optimize(J, control_lims..., u_0, Fminbox(LBFGS()), opts, autodiff=:forward)
