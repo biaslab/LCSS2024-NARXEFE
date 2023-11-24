@@ -64,7 +64,7 @@ function dzdt(sys::SPendulum, u::Float64; Δstate::Vector=zeros(2))
     "Equations of motion of single pendulum"
     z = sys.state + Δstate 
     mass, length, damping = params(sys)
-    return [z[2]; -9.81/length*sin(z[1]) - damping*length*z[2] + 1/mass*u] 
+    return [z[2]; -9.81/length*sin(z[1]) - damping/length*z[2] + 1/(mass*length)*u] 
 end
 
 function dzdt(sys::DPendulum, u::Vector{Float64}; Δstate::Vector=zeros(4), κ::Float64=0.0, gravity::Float64=9.81)
