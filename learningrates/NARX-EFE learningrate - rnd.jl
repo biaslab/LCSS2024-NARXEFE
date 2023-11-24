@@ -39,7 +39,7 @@ ppp = Progress(num_exps)
 for nn in 1:num_exps
 
     # Load system parameters
-    sys_settings = load("./experiments/data/system-$nn.jld")
+    sys_settings = load("learningrates/data/system-pol$H-$nn.jld")
     sys_mnoise_sd = sys_settings["sys_sd"]
     sys_coefficients = sys_settings["sys_theta"]
 
@@ -93,7 +93,7 @@ for nn in 1:num_exps
         FE[k] = agent.free_energy
     end
 
-    save("./experiments/results/learningrate-rnd-$nn.jld", "py", py, "mu", μ, "Lambda", Λ, "alpha", α, "beta", β, 
+    save("learningrates/results/learningrate-pol$H-rnd-$nn.jld", "py", py, "mu", μ, "Lambda", Λ, "alpha", α, "beta", β, 
         "FE", FE, "alpha0", α0, "beta0", β0, "mu0", μ0, "Lambda0", Λ0, "goal", goal,  "u_lims", input_lims, "thorizon", T)
 
     next!(ppp)

@@ -22,25 +22,25 @@ T = 10
 # Basis
 H = 2
 sys_basis(x) = cat([1.0; [x.^d for d in 1:H]]...,dims=1)
-M_in = 2
-M_out = 2
-M = size(sys_basis(zeros(M_out + 1 + M_in)),1)
+Mu = 2
+My = 2
+M = size(sys_basis(zeros(My + 1 + Mu)),1)
 
 # Control parameters
 input_lims = (-1.,1.)
 
 # Specify prior distributions
 α0 = 10.0
-β0 = 1.0
-μ0 = zeros(M)
-Λ0 = diagm(ones(M))
-goal = Normal(1.0, 1.0)
+β0 = 1e-1
+μ0 = 1e-8*ones(M)
+Λ0 = 1e-1diagm(ones(M))
+goals = [Normal(0.5, 1.0) for t in 1:T]
 
-ppp = Progress(num_exps)
-for nn in 1:num_exps
+# ppp = Progress(num_exps)
+@showprogress for nn in 1:num_exps
 
     # Load system parameters
-    sys_settings = load("./experiments/data/system-$nn.jld")
+    sys_settings = load("learningrates/data/system-pol$H-My$My-Mu$Mu-$nn.jld")
     sys_mnoise_sd = sys_settings["sys_sd"]
     sys_coefficients = sys_settings["sys_theta"]
 
@@ -52,8 +52,8 @@ for nn in 1:num_exps
     system = NARXsys(sys_coefficients, 
                      sys_basis, 
                      sys_mnoise_sd, 
-                     order_outputs=M_out, 
-                     order_inputs=M_in, 
+                     order_outputs=My, 
+                     order_inputs=Mu, 
                      input_lims=input_lims)
 
     py = []
@@ -64,9 +64,9 @@ for nn in 1:num_exps
     FE = zeros(N)
 
     agent = NARXAgent(μ0, Λ0, α0, β0,
-                      goal_prior=goal, 
-                      delay_inp=M_in, 
-                      delay_out=M_out, 
+                      goal_prior=goals, 
+                      delay_inp=Mu, 
+                      delay_out=My, 
                       pol_degree=H)
 
     outputs = zeros(N)
@@ -94,9 +94,11 @@ for nn in 1:num_exps
         FE[k] = agent.free_energy
     end
 
-    save("./experiments/results/learningrate-sin-$nn.jld", "py", py, "mu", μ, "Lambda", Λ, "alpha", α, "beta", β, 
-        "FE", FE, "alpha0", α0, "beta0", β0, "mu0", μ0, "Lambda0", Λ0, "goal", goal, "u_lims", input_lims, "thorizon", T)
+    save("learningrates/results/learningrate-pol$H-My$My-Mu$Mu-sin-$nn.jld", "py", py, "y_sin", outputs, "u_sin", inputs, "FE", FE,
+        "mu", μ, "Lambda", Λ, "alpha", α, "beta", β, 
+        "mu0", μ0, "Lambda0", Λ0, "alpha0", α0, "beta0", β0, 
+        "goal", goals, "u_lims", input_lims, "thorizon", T)
 
-    next!(ppp)
+    # next!(ppp)
 end
-finish!(ppp)
+# finish!(ppp)
